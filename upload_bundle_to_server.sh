@@ -2,30 +2,41 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <user[:password]@ip:remote_dir>" >&2
+  echo "Usage: $0 <user[:password]@ip:remote_dir | alias:remote_dir>" >&2
   exit 1
 fi
 
 TARGET="$1"
-
-if [[ ! "$TARGET" =~ ^([^@]+)@([^:]+):(.+)$ ]]; then
-  echo "Invalid target format. Expected: user[:password]@ip:remote_dir" >&2
-  exit 1
-fi
-
-AUTH="${BASH_REMATCH[1]}"
-HOST="${BASH_REMATCH[2]}"
-REMOTE_DIR="${BASH_REMATCH[3]}"
-
-USER_NAME="$AUTH"
 PASSWORD=""
-if [[ "$AUTH" == *:* ]]; then
-  USER_NAME="${AUTH%%:*}"
-  PASSWORD="${AUTH#*:}"
-fi
+REMOTE=""
+REMOTE_DIR=""
 
-if [[ -z "$USER_NAME" || -z "$HOST" || -z "$REMOTE_DIR" ]]; then
-  echo "Invalid target content. user, host and remote_dir are required." >&2
+if [[ "$TARGET" =~ ^([^@]+)@([^:]+):(.+)$ ]]; then
+  AUTH="${BASH_REMATCH[1]}"
+  HOST="${BASH_REMATCH[2]}"
+  REMOTE_DIR="${BASH_REMATCH[3]}"
+
+  USER_NAME="$AUTH"
+  if [[ "$AUTH" == *:* ]]; then
+    USER_NAME="${AUTH%%:*}"
+    PASSWORD="${AUTH#*:}"
+  fi
+
+  if [[ -z "$USER_NAME" || -z "$HOST" || -z "$REMOTE_DIR" ]]; then
+    echo "Invalid target content. user, host and remote_dir are required." >&2
+    exit 1
+  fi
+  REMOTE="$USER_NAME@$HOST"
+elif [[ "$TARGET" =~ ^([^:]+):(.+)$ ]]; then
+  ALIAS="${BASH_REMATCH[1]}"
+  REMOTE_DIR="${BASH_REMATCH[2]}"
+  if [[ -z "$ALIAS" || -z "$REMOTE_DIR" ]]; then
+    echo "Invalid target content. alias and remote_dir are required." >&2
+    exit 1
+  fi
+  REMOTE="$ALIAS"
+else
+  echo "Invalid target format. Expected: user[:password]@ip:remote_dir or alias:remote_dir" >&2
   exit 1
 fi
 
@@ -73,7 +84,6 @@ BUNDLE_NAME="md2pdf_deploy_bundle_$(date +%Y%m%d_%H%M%S).tar.gz"
 tar -C "$PKG_DIR" -czf "$BUNDLE_NAME" .
 
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
-REMOTE="$USER_NAME@$HOST"
 
 if [[ -n "$PASSWORD" ]]; then
   if ! command -v sshpass >/dev/null 2>&1; then

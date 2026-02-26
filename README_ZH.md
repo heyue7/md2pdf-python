@@ -1,62 +1,143 @@
 # Markdown 转 PDF（Python）
 
-基于 `markdown + weasyprint` 的 Markdown 转 PDF 工具，支持：
+面向生产部署的 Markdown 转 PDF 工具，基于 `markdown + weasyprint`。
 
-- 命令行直接转换文件
-- HTTP 服务模式（默认端口 `20706`）
-- 自定义 CSS 样式
-- 一键打包上传与服务器部署脚本
+- 文件级 CLI 转换
+- HTTP 转换服务（默认 `20706`）
+- 完整的部署、上传与后台运维脚本
 
-> English version: `README.md`
+> English: `README.md`
 
-## 功能概览
+## 快速启动
 
-- CLI 直转：`md2pdf input.md -o output.pdf`
-- HTTP 模式：`md2pdf --serve --port 20706`
-- 健康检查接口：`GET /health`
-- 转换接口：`POST /convert`（返回 PDF 二进制）
+核心脚本（位于 `scripts/`）：
 
-## 环境要求
+- `scripts/deploy_ubuntu.sh`
+- `scripts/deploy_rhel.sh`
+- `scripts/start_http_background.sh`
+- `scripts/stop_http_background.sh`
 
-- Python `>= 3.10`
-- 依赖：
-  - `markdown>=3.6`
-  - `weasyprint>=62.0`
+### 安装
 
-Linux（尤其服务器）需要 WeasyPrint 的系统库，见下文。
-
-## 安装方式
-
-三种方式任选其一。
-
-### 1) pip + venv
+服务器推荐直接使用部署脚本：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -e .
+# Ubuntu / Debian
+sudo bash scripts/deploy_ubuntu.sh
+
+# RHEL 系
+sudo bash scripts/deploy_rhel.sh
 ```
 
-### 2) uv
+### 使用
+
+CLI 单文件转换：
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install -U pip
-uv pip install -e .
+md2pdf samples/basic.md -o output/basic.pdf
 ```
 
-### 3) conda
+后台启动 HTTP 服务：
 
 ```bash
-conda create -n md2pdf python=3.11 -y
-conda activate md2pdf
-pip install -U pip
-pip install -e .
+bash scripts/start_http_background.sh
 ```
 
-## CLI 用法
+健康检查：
+
+```bash
+curl http://127.0.0.1:20706/health
+```
+
+调用 HTTP 转换：
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  -d '{"markdown":"# Hello\n\nThis is from HTTP."}' \
+  --output output/http.pdf
+```
+
+调用 HTTP 转换（读取本地 `.md` 文件）：
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  --data "$(python3 -c 'import json, pathlib; p=pathlib.Path("samples/studyGuide.md"); print(json.dumps({"markdown": p.read_text(encoding="utf-8"), "filename": "studyGuide.pdf"}, ensure_ascii=False))')" \
+  --output output/studyGuide.pdf
+```
+
+停止 HTTP 服务：
+
+```bash
+bash scripts/stop_http_background.sh
+```
+
+### 脚本参数与默认值
+
+- `deploy_ubuntu.sh` / `deploy_rhel.sh`
+  - 默认安装目录：当前目录
+  - 可选参数 1：自定义安装目录
+  - 自动查找 wheel：`./md2pdf_cli-*.whl` 或 `./dist/md2pdf_cli-*.whl`
+- `start_http_background.sh`
+  - 无参数启动
+  - 默认 `HOST=0.0.0.0`、`PORT=20706`
+  - 默认日志：`<项目根>/md2pdf-http.log`
+  - 默认 PID：`<项目根>/md2pdf-http.pid`
+  - 可用环境变量覆盖：
+    - `MD2PDF_HOST`
+    - `MD2PDF_PORT`
+    - `MD2PDF_LOG_FILE`
+    - `MD2PDF_PID_FILE`
+- `stop_http_background.sh`
+  - 可选参数 1：安装目录（默认当前目录）
+  - 可选参数 2：PID 文件（默认 `<安装目录>/md2pdf-http.pid`）
+
+## 发布到服务器
+
+根目录上传脚本：`upload_bundle_to_server.sh`
+
+该脚本会自动：
+
+- 发现最新 wheel（当前目录或 `dist/`）
+- 打包 wheel + 4 个核心脚本
+- 上传到目标服务器目录
+
+支持的单参数目标格式：
+
+- `alias:/remote_dir`（SSH Host 昵称）
+- `user@ip:/remote_dir`（公钥认证）
+- `user:password@ip:/remote_dir`（密码认证）
+
+示例：
+
+```bash
+# SSH 配置昵称
+bash upload_bundle_to_server.sh "server-1:/data/md2pdf"
+
+# 公钥登录
+bash upload_bundle_to_server.sh "root@1.2.3.4:/home/root/md2pdf"
+
+# 密码登录
+bash upload_bundle_to_server.sh "root:yourPassword@1.2.3.4:/home/root/md2pdf"
+```
+
+注意：
+
+- 密码模式依赖本机 `sshpass`
+- 远端目录不存在时会自动创建
+
+上传后在服务器执行：
+
+```bash
+cd /home/root/md2pdf
+tar -xzf md2pdf_deploy_bundle_*.tar.gz
+sudo bash scripts/deploy_ubuntu.sh
+```
+
+## 功能接口
+
+### CLI
 
 ```bash
 md2pdf <input.md> [-o output.pdf] [--css custom.css]
@@ -67,41 +148,32 @@ md2pdf --serve [--host 127.0.0.1] [--port 20706] [--css custom.css]
 
 - `input`：输入 Markdown 文件（非 `--serve` 模式必填）
 - `-o, --output`：输出 PDF 路径（默认与输入同名 `.pdf`）
-- `--css`：自定义 CSS 路径
+- `--css`：自定义 CSS 文件路径
 - `--serve`：启动 HTTP 服务模式
 - `--host`：监听地址，默认 `127.0.0.1`
 - `--port`：监听端口，默认 `20706`
 
-### CLI 示例
+### HTTP API
 
-```bash
-md2pdf samples/basic.md -o output/basic.pdf
-md2pdf samples/table.md -o output/table.pdf
-```
-
-## HTTP 接口
-
-### 启动服务
+启动服务：
 
 ```bash
 md2pdf --serve --port 20706
 ```
 
-### 健康检查
+健康检查：
 
 ```bash
 curl http://127.0.0.1:20706/health
 ```
 
-### 转换接口
+转换端点：`POST /convert`
 
-请求：`POST /convert`
-
-JSON 字段：
+请求 JSON 字段：
 
 - `markdown`（必填，字符串）
-- `filename`（可选，下载文件名，默认 `output.pdf`）
-- `css_path`（可选，服务端自定义 CSS 文件路径）
+- `filename`（可选，默认 `output.pdf`）
+- `css_path`（可选，服务端 CSS 路径）
 
 示例：
 
@@ -112,9 +184,38 @@ curl -X POST "http://127.0.0.1:20706/convert" \
   --output output/http.pdf
 ```
 
-## Linux 系统依赖（WeasyPrint）
+## 本地开发安装
 
-Debian/Ubuntu 建议安装：
+### pip + venv
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .
+```
+
+### uv
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -U pip
+uv pip install -e .
+```
+
+### conda
+
+```bash
+conda create -n md2pdf python=3.11 -y
+conda activate md2pdf
+pip install -U pip
+pip install -e .
+```
+
+## Linux 运行依赖（WeasyPrint）
+
+Debian/Ubuntu：
 
 ```bash
 sudo apt-get update
@@ -123,14 +224,7 @@ sudo apt-get install -y \
   libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info fonts-dejavu-core
 ```
 
-如果渲染异常：
-
-- 检查系统字体
-- 检查 cairo / pango 等动态库是否完整
-
-## 打包发布
-
-生成 wheel 与源码包：
+## 构建产物
 
 ```bash
 python -m build
@@ -141,106 +235,7 @@ python -m build
 - `md2pdf_cli-<version>-py3-none-any.whl`
 - `md2pdf_cli-<version>.tar.gz`
 
-## 服务器脚本（scripts/）
-
-项目内置以下脚本：
-
-- `scripts/deploy_ubuntu.sh`
-- `scripts/deploy_rhel.sh`
-- `scripts/start_http_background.sh`
-- `scripts/stop_http_background.sh`
-- `upload_bundle_to_server.sh`
-
-### 1) 上传精简部署包（本机执行）
-
-脚本会自动：
-
-- 查找最新 wheel（当前目录或 `dist/`）
-- 打包 wheel + 部署/启停脚本
-- 上传到服务器目标目录
-
-命令（单参数）：
-
-```bash
-# 公钥登录
-bash upload_bundle_to_server.sh "root@1.2.3.4:/home/root/md2pdf"
-
-# 密码登录
-bash upload_bundle_to_server.sh "root:yourPassword@1.2.3.4:/home/root/md2pdf"
-```
-
-说明：
-
-- 密码模式需要本机安装 `sshpass`
-- 远端目录不存在会自动创建
-
-### 2) 服务器部署（目标机执行）
-
-```bash
-cd /home/root/md2pdf
-tar -xzf md2pdf_deploy_bundle_*.tar.gz
-sudo bash scripts/deploy_ubuntu.sh
-```
-
-RHEL 系统使用：
-
-```bash
-sudo bash scripts/deploy_rhel.sh
-```
-
-部署脚本行为：
-
-- 默认安装目录：当前目录
-- 可选参数 1：自定义安装目录
-- 自动查找 wheel：
-  - `./md2pdf_cli-*.whl`
-  - `./dist/md2pdf_cli-*.whl`
-
-### 3) 后台启动 HTTP 服务
-
-```bash
-bash scripts/start_http_background.sh
-```
-
-默认配置：
-
-- 项目根目录为安装目录
-- `HOST=0.0.0.0`
-- `PORT=20706`
-- 日志文件：`<项目根>/md2pdf-http.log`
-- PID 文件：`<项目根>/md2pdf-http.pid`
-
-可用环境变量覆盖：
-
-- `MD2PDF_HOST`
-- `MD2PDF_PORT`
-- `MD2PDF_LOG_FILE`
-- `MD2PDF_PID_FILE`
-
-示例：
-
-```bash
-MD2PDF_PORT=28080 bash scripts/start_http_background.sh
-```
-
-### 4) 停止后台服务
-
-```bash
-bash scripts/stop_http_background.sh
-```
-
-可选参数：
-
-- 参数 1：安装目录（默认当前目录）
-- 参数 2：PID 文件（默认 `<安装目录>/md2pdf-http.pid`）
-
-示例：
-
-```bash
-bash scripts/stop_http_background.sh "$(pwd)" "$(pwd)/md2pdf-http.pid"
-```
-
-## 本地验证
+## 验证示例
 
 ```bash
 md2pdf samples/basic.md -o output/basic.pdf

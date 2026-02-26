@@ -1,62 +1,143 @@
 # Markdown to PDF (Python)
 
-A Markdown-to-PDF tool based on `markdown + weasyprint`, with support for:
+A production-oriented Markdown-to-PDF tool powered by `markdown + weasyprint`.
 
-- Direct file conversion via CLI
-- HTTP service mode (default port `20706`)
-- Custom CSS
-- Packaging/upload/deployment helper scripts
+- File-based CLI conversion
+- HTTP conversion service (default `20706`)
+- Deployment, upload, and background operation scripts
 
-> Chinese version: `README_ZH.md`
+> 中文文档: `README_ZH.md`
 
-## Features
+## Quick Start
 
-- CLI conversion: `md2pdf input.md -o output.pdf`
-- HTTP mode: `md2pdf --serve --port 20706`
-- Health endpoint: `GET /health`
-- Conversion endpoint: `POST /convert` (returns PDF bytes)
+Core scripts (under `scripts/`):
 
-## Requirements
+- `scripts/deploy_ubuntu.sh`
+- `scripts/deploy_rhel.sh`
+- `scripts/start_http_background.sh`
+- `scripts/stop_http_background.sh`
 
-- Python `>= 3.10`
-- Python dependencies:
-  - `markdown>=3.6`
-  - `weasyprint>=62.0`
+### Install
 
-For Linux servers, install system libraries required by WeasyPrint (see below).
-
-## Installation
-
-Choose one setup flow.
-
-### 1) pip + venv
+For servers, use deployment scripts directly:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -e .
+# Ubuntu / Debian
+sudo bash scripts/deploy_ubuntu.sh
+
+# RHEL family
+sudo bash scripts/deploy_rhel.sh
 ```
 
-### 2) uv
+### Use
+
+Single-file CLI conversion:
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install -U pip
-uv pip install -e .
+md2pdf samples/basic.md -o output/basic.pdf
 ```
 
-### 3) conda
+Start HTTP service in background:
 
 ```bash
-conda create -n md2pdf python=3.11 -y
-conda activate md2pdf
-pip install -U pip
-pip install -e .
+bash scripts/start_http_background.sh
 ```
 
-## CLI Usage
+Health check:
+
+```bash
+curl http://127.0.0.1:20706/health
+```
+
+HTTP conversion call:
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  -d '{"markdown":"# Hello\n\nThis is from HTTP."}' \
+  --output output/http.pdf
+```
+
+HTTP conversion call from a local `.md` file:
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  --data "$(python3 -c 'import json, pathlib; p=pathlib.Path("samples/studyGuide.md"); print(json.dumps({"markdown": p.read_text(encoding="utf-8"), "filename": "studyGuide.pdf"}, ensure_ascii=False))')" \
+  --output output/studyGuide.pdf
+```
+
+Stop HTTP service:
+
+```bash
+bash scripts/stop_http_background.sh
+```
+
+### Script parameters and defaults
+
+- `deploy_ubuntu.sh` / `deploy_rhel.sh`
+  - default install directory: current directory
+  - optional arg1: custom install directory
+  - auto wheel discovery: `./md2pdf_cli-*.whl` or `./dist/md2pdf_cli-*.whl`
+- `start_http_background.sh`
+  - zero-argument startup
+  - defaults: `HOST=0.0.0.0`, `PORT=20706`
+  - default log: `<project_root>/md2pdf-http.log`
+  - default pid: `<project_root>/md2pdf-http.pid`
+  - override via env vars:
+    - `MD2PDF_HOST`
+    - `MD2PDF_PORT`
+    - `MD2PDF_LOG_FILE`
+    - `MD2PDF_PID_FILE`
+- `stop_http_background.sh`
+  - optional arg1: install dir (default current directory)
+  - optional arg2: pid file (default `<install_dir>/md2pdf-http.pid`)
+
+## Server Delivery
+
+Root upload script: `upload_bundle_to_server.sh`
+
+It automatically:
+
+- finds the latest wheel in current directory or `dist/`
+- packages wheel + 4 core scripts
+- uploads the bundle to target server directory
+
+Supported single-argument target formats:
+
+- `alias:/remote_dir` (SSH host alias)
+- `user@ip:/remote_dir` (SSH key auth)
+- `user:password@ip:/remote_dir` (password auth)
+
+Examples:
+
+```bash
+# SSH alias
+bash upload_bundle_to_server.sh "server-1:/data/md2pdf"
+
+# SSH key
+bash upload_bundle_to_server.sh "root@1.2.3.4:/home/root/md2pdf"
+
+# Password
+bash upload_bundle_to_server.sh "root:yourPassword@1.2.3.4:/home/root/md2pdf"
+```
+
+Notes:
+
+- password mode requires `sshpass` on local machine
+- target directory is created automatically if missing
+
+After upload, run on server:
+
+```bash
+cd /home/root/md2pdf
+tar -xzf md2pdf_deploy_bundle_*.tar.gz
+sudo bash scripts/deploy_ubuntu.sh
+```
+
+## Runtime Interfaces
+
+### CLI
 
 ```bash
 md2pdf <input.md> [-o output.pdf] [--css custom.css]
@@ -65,43 +146,34 @@ md2pdf --serve [--host 127.0.0.1] [--port 20706] [--css custom.css]
 
 Arguments:
 
-- `input`: input Markdown file (required when not using `--serve`)
-- `-o, --output`: output PDF path (defaults to input name with `.pdf`)
+- `input`: Markdown input file (required when not using `--serve`)
+- `-o, --output`: output PDF path (defaults to input filename with `.pdf`)
 - `--css`: custom CSS file path
 - `--serve`: run HTTP service mode
-- `--host`: bind host, default `127.0.0.1`
+- `--host`: bind address, default `127.0.0.1`
 - `--port`: bind port, default `20706`
 
-### CLI Examples
+### HTTP API
 
-```bash
-md2pdf samples/basic.md -o output/basic.pdf
-md2pdf samples/table.md -o output/table.pdf
-```
-
-## HTTP API
-
-### Start service
+Start service:
 
 ```bash
 md2pdf --serve --port 20706
 ```
 
-### Health check
+Health check:
 
 ```bash
 curl http://127.0.0.1:20706/health
 ```
 
-### Convert endpoint
+Convert endpoint: `POST /convert`
 
-Request: `POST /convert`
-
-JSON fields:
+Request JSON fields:
 
 - `markdown` (required, string)
 - `filename` (optional, default `output.pdf`)
-- `css_path` (optional, custom CSS path on server)
+- `css_path` (optional, server-side CSS path)
 
 Example:
 
@@ -112,9 +184,47 @@ curl -X POST "http://127.0.0.1:20706/convert" \
   --output output/http.pdf
 ```
 
-## Linux System Dependencies (WeasyPrint)
+Example with local Markdown file:
 
-Recommended packages on Debian/Ubuntu:
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  --data "$(python3 -c 'import json, pathlib; p=pathlib.Path("samples/26.43.159.KC-1.1.1.studyGuide.md"); print(json.dumps({"markdown": p.read_text(encoding="utf-8"), "filename": "studyGuide.pdf"}, ensure_ascii=False))')" \
+  --output output/studyGuide.pdf
+```
+
+## Local Setup
+
+### pip + venv
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .
+```
+
+### uv
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -U pip
+uv pip install -e .
+```
+
+### conda
+
+```bash
+conda create -n md2pdf python=3.11 -y
+conda activate md2pdf
+pip install -U pip
+pip install -e .
+```
+
+## Linux Runtime Dependencies (WeasyPrint)
+
+Debian/Ubuntu:
 
 ```bash
 sudo apt-get update
@@ -123,11 +233,7 @@ sudo apt-get install -y \
   libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info fonts-dejavu-core
 ```
 
-If rendering fails, check fonts and dynamic libraries (`cairo`, `pango`, etc.).
-
-## Build
-
-Create wheel and source distribution:
+## Build Artifacts
 
 ```bash
 python -m build
@@ -138,106 +244,7 @@ Artifacts in `dist/`:
 - `md2pdf_cli-<version>-py3-none-any.whl`
 - `md2pdf_cli-<version>.tar.gz`
 
-## Deployment Scripts
-
-Included scripts:
-
-- `scripts/deploy_ubuntu.sh`
-- `scripts/deploy_rhel.sh`
-- `scripts/start_http_background.sh`
-- `scripts/stop_http_background.sh`
-- `upload_bundle_to_server.sh`
-
-### 1) Upload minimal deployment bundle (local machine)
-
-This script automatically:
-
-- finds the latest wheel in current directory or `dist/`
-- packages the wheel and deployment scripts
-- uploads bundle to target server path
-
-Single argument format:
-
-```bash
-# SSH key auth
-bash upload_bundle_to_server.sh "root@1.2.3.4:/home/root/md2pdf"
-
-# Password auth
-bash upload_bundle_to_server.sh "root:yourPassword@1.2.3.4:/home/root/md2pdf"
-```
-
-Notes:
-
-- Password mode requires `sshpass` on local machine
-- Target directory is created automatically if missing
-
-### 2) Deploy on server
-
-```bash
-cd /home/root/md2pdf
-tar -xzf md2pdf_deploy_bundle_*.tar.gz
-sudo bash scripts/deploy_ubuntu.sh
-```
-
-For RHEL family:
-
-```bash
-sudo bash scripts/deploy_rhel.sh
-```
-
-Deploy script behavior:
-
-- default install directory: current directory
-- optional argument 1: custom install directory
-- wheel auto-discovery:
-  - `./md2pdf_cli-*.whl`
-  - `./dist/md2pdf_cli-*.whl`
-
-### 3) Start HTTP service in background
-
-```bash
-bash scripts/start_http_background.sh
-```
-
-Defaults:
-
-- install root: project root directory
-- `HOST=0.0.0.0`
-- `PORT=20706`
-- log file: `<project_root>/md2pdf-http.log`
-- pid file: `<project_root>/md2pdf-http.pid`
-
-Override with env vars:
-
-- `MD2PDF_HOST`
-- `MD2PDF_PORT`
-- `MD2PDF_LOG_FILE`
-- `MD2PDF_PID_FILE`
-
-Example:
-
-```bash
-MD2PDF_PORT=28080 bash scripts/start_http_background.sh
-```
-
-### 4) Stop background service
-
-```bash
-bash scripts/stop_http_background.sh
-```
-
-Optional args:
-
-- arg 1: install directory (default current directory)
-- arg 2: pid file path (default `<install_dir>/md2pdf-http.pid`)
-
-Example:
-
-```bash
-bash scripts/stop_http_background.sh "$(pwd)" "$(pwd)/md2pdf-http.pid"
-```
-
-## Local Validation
+## Validation Examples
 
 ```bash
 md2pdf samples/basic.md -o output/basic.pdf
