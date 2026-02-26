@@ -7,7 +7,7 @@
 - 自定义 CSS 样式
 - 一键打包上传与服务器部署脚本
 
-> English version: `README_EN.md`
+> English version: `README.md`
 
 ## 功能概览
 
