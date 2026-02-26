@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "md2pdf-cli"
+version = "0.1.0"
+description = "Convert Markdown to PDF via markdown + weasyprint"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "markdown>=3.6",
+  "weasyprint>=62.0",
+]
+
+[project.scripts]
+md2pdf = "md2pdf.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["md2pdf*"]
+
+[tool.setuptools.package-data]
+md2pdf = ["default.css"]
