@@ -140,8 +140,8 @@ curl -X POST "http://127.0.0.1:20706/convert-watermark" \
 
 该脚本会自动：
 
+- 执行构建（等价于 `python -m build`）
 - 发现最新 wheel（当前目录或 `dist/`）
-- 打包 wheel + 4 个核心脚本
 - 打包 wheel + 5 个核心脚本
 - 上传到目标服务器目录
 

@@ -140,8 +140,8 @@ Root upload script: `upload_bundle_to_server.sh`
 
 It automatically:
 
+- runs build first (equivalent to `python -m build`)
 - finds the latest wheel in current directory or `dist/`
-- packages wheel + 4 core scripts
 - packages wheel + 5 core scripts
 - uploads the bundle to target server directory
 

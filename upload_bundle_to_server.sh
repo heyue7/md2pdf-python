@@ -11,6 +11,14 @@ PASSWORD=""
 REMOTE=""
 REMOTE_DIR=""
 
+if [[ -x "$PWD/.venv/bin/python" ]]; then
+  "$PWD/.venv/bin/python" -m build
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -m build
+else
+  python -m build
+fi
+
 if [[ "$TARGET" =~ ^([^@]+)@([^:]+):(.+)$ ]]; then
   AUTH="${BASH_REMATCH[1]}"
   HOST="${BASH_REMATCH[2]}"
@@ -45,7 +53,7 @@ WHEELS=("$PWD"/md2pdf_cli-*.whl "$PWD"/dist/md2pdf_cli-*.whl)
 shopt -u nullglob
 
 if [[ ${#WHEELS[@]} -eq 0 ]]; then
-  echo "No wheel found. Build first: python -m build" >&2
+  echo "No wheel found after build" >&2
   exit 1
 fi
 

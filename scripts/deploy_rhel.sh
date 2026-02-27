@@ -5,9 +5,13 @@ INSTALL_DIR="${1:-$(pwd)}"
 WHEEL_PATH=""
 
 shopt -s nullglob
-wheels=("$PWD"/md2pdf_cli-*.whl "$PWD"/dist/md2pdf_cli-*.whl)
-if [[ ${#wheels[@]} -gt 0 ]]; then
-  IFS=$'\n' sorted=($(ls -1t "${wheels[@]}"))
+current_wheels=("$PWD"/md2pdf_cli-*.whl)
+dist_wheels=("$PWD"/dist/md2pdf_cli-*.whl)
+if [[ ${#current_wheels[@]} -gt 0 ]]; then
+  IFS=$'\n' sorted=($(ls -1t "${current_wheels[@]}"))
+  WHEEL_PATH="${sorted[0]}"
+elif [[ ${#dist_wheels[@]} -gt 0 ]]; then
+  IFS=$'\n' sorted=($(ls -1t "${dist_wheels[@]}"))
   WHEEL_PATH="${sorted[0]}"
 fi
 shopt -u nullglob
@@ -32,10 +36,11 @@ mkdir -p "$INSTALL_DIR"
 python3 -m venv "$INSTALL_DIR/.venv"
 
 "$INSTALL_DIR/.venv/bin/pip" install -U pip
-"$INSTALL_DIR/.venv/bin/pip" install "$WHEEL_PATH"
+"$INSTALL_DIR/.venv/bin/pip" install --force-reinstall "$WHEEL_PATH"
 
 "$INSTALL_DIR/.venv/bin/md2pdf" --help >/dev/null
 
 echo "Deploy success"
 echo "Install dir: $INSTALL_DIR"
 echo "Run HTTP server: $INSTALL_DIR/.venv/bin/md2pdf --serve --host 0.0.0.0 --port 20706"
+echo "Or run in background: bash $INSTALL_DIR/scripts/start_http_background.sh"
