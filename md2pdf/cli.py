@@ -6,9 +6,12 @@ import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from md2pdf.converter import ConvertOptions, convert_markdown_to_pdf
+from md2pdf.converter import (
+    ConvertOptions,
+    convert_markdown_to_pdf,
+    render_markdown_to_pdf_bytes,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,6 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
         "-o", "--output", help="输出 PDF 文件路径（默认与输入同名 .pdf）"
     )
     parser.add_argument("--css", help="自定义 CSS 文件路径")
+    parser.add_argument(
+        "--watermark",
+        action="store_true",
+        help="开启水印（默认文字 CONFIDENTIAL）",
+    )
+    parser.add_argument("--watermark-text", help="自定义水印文字")
     parser.add_argument("--serve", action="store_true", help="启动 HTTP 服务模式")
     parser.add_argument(
         "--host", default="127.0.0.1", help="HTTP 服务监听地址（默认 127.0.0.1）"
@@ -53,24 +62,55 @@ def _handler_factory(default_css_path: Path | None) -> type[BaseHTTPRequestHandl
             self._send_json(HTTPStatus.OK, {"status": "ok"})
 
         def do_POST(self) -> None:
-            if self.path != "/convert":
+            if self.path not in {"/convert", "/convert-watermark"}:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
 
+            payload = self._read_json_payload()
+            if payload is None:
+                return
+
+            watermark_text: str | None = None
+            if self.path == "/convert-watermark":
+                watermark_value = payload.get("watermark_text", "CONFIDENTIAL")
+                if not isinstance(watermark_value, str) or not watermark_value.strip():
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": "field 'watermark_text' must be a non-empty string"},
+                    )
+                    return
+                watermark_text = watermark_value
+
+            self._handle_convert(payload, watermark_text)
+
+        def _read_json_payload(self) -> dict[str, object] | None:
             content_length = int(self.headers.get("Content-Length", "0"))
             if content_length <= 0:
                 self._send_json(
                     HTTPStatus.BAD_REQUEST, {"error": "request body is empty"}
                 )
-                return
+                return None
 
             try:
                 body = self.rfile.read(content_length)
                 payload = json.loads(body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid json body"})
-                return
+                return None
 
+            if not isinstance(payload, dict):
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST, {"error": "json root must be object"}
+                )
+                return None
+
+            return payload
+
+        def _handle_convert(
+            self,
+            payload: dict[str, object],
+            watermark_text: str | None,
+        ) -> None:
             markdown_text = payload.get("markdown")
             if not isinstance(markdown_text, str):
                 self._send_json(
@@ -79,30 +119,18 @@ def _handler_factory(default_css_path: Path | None) -> type[BaseHTTPRequestHandl
                 )
                 return
 
-            css_path_value = payload.get("css_path")
-            css_path = default_css_path
-            if isinstance(css_path_value, str) and css_path_value.strip():
-                css_path = Path(css_path_value)
+            css_path = _resolve_css_path(payload.get("css_path"), default_css_path)
+            filename = _resolve_filename(payload.get("filename"))
 
-            filename = payload.get("filename", "output.pdf")
-            if not isinstance(filename, str) or not filename.strip():
-                filename = "output.pdf"
             safe_filename = filename.replace('"', "").replace("\n", "")
 
             try:
-                with TemporaryDirectory() as temp_dir:
-                    temp_root = Path(temp_dir)
-                    temp_input = temp_root / "input.md"
-                    temp_output = temp_root / "output.pdf"
-                    temp_input.write_text(markdown_text, encoding="utf-8")
-
-                    options = ConvertOptions(
-                        input_path=temp_input,
-                        output_path=temp_output,
-                        css_path=css_path,
-                    )
-                    generated_pdf = convert_markdown_to_pdf(options)
-                    pdf_bytes = generated_pdf.read_bytes()
+                pdf_bytes = render_markdown_to_pdf_bytes(
+                    markdown_text=markdown_text,
+                    title="http-request.md",
+                    css_path=css_path,
+                    watermark_text=watermark_text,
+                )
             except Exception as exc:
                 self._send_json(
                     HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -123,10 +151,28 @@ def _handler_factory(default_css_path: Path | None) -> type[BaseHTTPRequestHandl
     return ConvertHandler
 
 
+def _resolve_css_path(
+    css_path_value: object,
+    default_css_path: Path | None,
+) -> Path | None:
+    if isinstance(css_path_value, str) and css_path_value.strip():
+        return Path(css_path_value)
+    return default_css_path
+
+
+def _resolve_filename(filename_value: object) -> str:
+    if isinstance(filename_value, str) and filename_value.strip():
+        return filename_value
+    return "output.pdf"
+
+
 def run_server(host: str, port: int, css_path: Path | None) -> int:
     server = ThreadingHTTPServer((host, port), _handler_factory(css_path))
     print(f"HTTP server started: http://{host}:{port}")
     print("POST /convert with JSON: {'markdown': '...'}")
+    print(
+        "POST /convert-watermark with JSON: {'markdown': '...', 'watermark_text': 'CONFIDENTIAL'}"
+    )
     print("GET /health for health check")
     try:
         server.serve_forever()
@@ -160,6 +206,7 @@ def main() -> int:
         input_path=Path(args.input),
         output_path=Path(args.output) if args.output else None,
         css_path=Path(args.css) if args.css else None,
+        watermark_text=_resolve_cli_watermark_text(args),
     )
 
     try:
@@ -169,6 +216,14 @@ def main() -> int:
     except Exception as exc:
         print(f"转换失败: {exc}", file=sys.stderr)
         return 1
+
+
+def _resolve_cli_watermark_text(args: argparse.Namespace) -> str | None:
+    if args.watermark_text:
+        return args.watermark_text
+    if args.watermark:
+        return "CONFIDENTIAL"
+    return None
 
 
 if __name__ == "__main__":

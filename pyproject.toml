@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md2pdf-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Convert Markdown to PDF via markdown + weasyprint"
 readme = "README.md"
 requires-python = ">=3.10"

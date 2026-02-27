@@ -61,7 +61,8 @@ for f in \
   "$PWD/scripts/deploy_ubuntu.sh" \
   "$PWD/scripts/deploy_rhel.sh" \
   "$PWD/scripts/start_http_background.sh" \
-  "$PWD/scripts/stop_http_background.sh"; do
+  "$PWD/scripts/stop_http_background.sh" \
+  "$PWD/scripts/convert_with_watermark.sh"; do
   if [[ ! -f "$f" ]]; then
     echo "Required file missing: $f" >&2
     exit 1
@@ -79,11 +80,17 @@ cp "$PWD/scripts/deploy_ubuntu.sh" "$PKG_DIR/scripts/"
 cp "$PWD/scripts/deploy_rhel.sh" "$PKG_DIR/scripts/"
 cp "$PWD/scripts/start_http_background.sh" "$PKG_DIR/scripts/"
 cp "$PWD/scripts/stop_http_background.sh" "$PKG_DIR/scripts/"
+cp "$PWD/scripts/convert_with_watermark.sh" "$PKG_DIR/scripts/"
 
 BUNDLE_NAME="md2pdf_deploy_bundle_$(date +%Y%m%d_%H%M%S).tar.gz"
-tar -C "$PKG_DIR" -czf "$BUNDLE_NAME" .
+BUNDLE_PATH="$TMP_DIR/$BUNDLE_NAME"
+tar -C "$PKG_DIR" -czf "$BUNDLE_PATH" .
 
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+
+if [[ -n "${MD2PDF_SSH_KEY:-}" ]]; then
+  SSH_OPTS+=( -i "$MD2PDF_SSH_KEY" )
+fi
 
 if [[ -n "$PASSWORD" ]]; then
   if ! command -v sshpass >/dev/null 2>&1; then
@@ -91,11 +98,19 @@ if [[ -n "$PASSWORD" ]]; then
     exit 1
   fi
 
-  SSHPASS="$PASSWORD" sshpass -e ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p \"$REMOTE_DIR\""
-  SSHPASS="$PASSWORD" sshpass -e scp "${SSH_OPTS[@]}" "$BUNDLE_NAME" "$REMOTE:$REMOTE_DIR/"
+  if SSHPASS="$PASSWORD" sshpass -e scp "${SSH_OPTS[@]}" "$BUNDLE_PATH" "$REMOTE:$REMOTE_DIR/"; then
+    :
+  else
+    SSHPASS="$PASSWORD" sshpass -e ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p \"$REMOTE_DIR\""
+    SSHPASS="$PASSWORD" sshpass -e scp "${SSH_OPTS[@]}" "$BUNDLE_PATH" "$REMOTE:$REMOTE_DIR/"
+  fi
 else
-  ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p \"$REMOTE_DIR\""
-  scp "${SSH_OPTS[@]}" "$BUNDLE_NAME" "$REMOTE:$REMOTE_DIR/"
+  if scp "${SSH_OPTS[@]}" "$BUNDLE_PATH" "$REMOTE:$REMOTE_DIR/"; then
+    :
+  else
+    ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p \"$REMOTE_DIR\""
+    scp "${SSH_OPTS[@]}" "$BUNDLE_PATH" "$REMOTE:$REMOTE_DIR/"
+  fi
 fi
 
 echo "Upload success"
