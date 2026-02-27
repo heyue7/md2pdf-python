@@ -62,6 +62,12 @@ Start HTTP service in background:
 bash scripts/start_http_background.sh
 ```
 
+Stop HTTP service:
+
+```bash
+bash scripts/stop_http_background.sh
+```
+
 Health check:
 
 ```bash
@@ -102,12 +108,6 @@ curl -X POST "http://127.0.0.1:20706/convert-watermark" \
   -H "Content-Type: application/json" \
   --data "$(python3 -c 'import json, pathlib; p=pathlib.Path("samples/26.43.159.KC-1.1.1.studyGuide.md"); print(json.dumps({"markdown": p.read_text(encoding="utf-8"), "watermark_text": "TOP SECRET", "filename": "studyGuide_wm.pdf"}, ensure_ascii=False))')" \
   --output output/studyGuide_wm.pdf
-```
-
-Stop HTTP service:
-
-```bash
-bash scripts/stop_http_background.sh
 ```
 
 ### Script parameters and defaults
