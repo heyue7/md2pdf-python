@@ -1,6 +1,6 @@
 # Markdown 转 PDF（Python）
 
-面向生产部署的 Markdown 转 PDF 工具，基于 `markdown + weasyprint`。
+面向生产部署的 Markdown/HTML 转 PDF 工具，基于 `markdown + weasyprint`。
 
 - 文件级 CLI 转换
 - HTTP 转换服务（默认 `20706`）
@@ -36,6 +36,12 @@ CLI 单文件转换：
 
 ```bash
 md2pdf samples/basic.md -o output/basic.pdf
+```
+
+HTML 文件转换：
+
+```bash
+md2pdf samples/basic.html -o output/basic_html.pdf
 ```
 
 快捷水印转换（脚本）：
@@ -81,6 +87,15 @@ curl -X POST "http://127.0.0.1:20706/convert" \
   -H "Content-Type: application/json" \
   -d '{"markdown":"# Hello\n\nThis is from HTTP."}' \
   --output output/http.pdf
+```
+
+调用 HTTP HTML 转换：
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  -d '{"html":"<h1>Hello</h1><p>This is from HTTP HTML.</p>"}' \
+  --output output/http_html.pdf
 ```
 
 调用 HTTP 转换（读取本地 `.md` 文件）：
@@ -184,14 +199,14 @@ sudo bash scripts/deploy_ubuntu.sh
 ### CLI
 
 ```bash
-md2pdf <input.md> [-o output.pdf] [--css custom.css]
-md2pdf <input.md> [-o output.pdf] [--css custom.css] [--watermark] [--watermark-text TEXT]
+md2pdf <input.md|input.html> [-o output.pdf] [--css custom.css]
+md2pdf <input.md|input.html> [-o output.pdf] [--css custom.css] [--watermark] [--watermark-text TEXT]
 md2pdf --serve [--host 127.0.0.1] [--port 20706] [--css custom.css]
 ```
 
 参数说明：
 
-- `input`：输入 Markdown 文件（非 `--serve` 模式必填）
+- `input`：输入 Markdown 或 HTML 文件（非 `--serve` 模式必填）
 - `-o, --output`：输出 PDF 路径（默认与输入同名 `.pdf`）
 - `--css`：自定义 CSS 文件路径
 - `--watermark`：开启水印（默认文字 `CONFIDENTIAL`）
@@ -220,7 +235,7 @@ curl http://127.0.0.1:20706/health
 
 请求 JSON 字段：
 
-- `markdown`（必填，字符串）
+- `markdown` 或 `html`（二选一必填，字符串）
 - `filename`（可选，默认 `output.pdf`）
 - `css_path`（可选，服务端 CSS 路径）
 
@@ -235,6 +250,15 @@ curl -X POST "http://127.0.0.1:20706/convert" \
   -H "Content-Type: application/json" \
   -d '{"markdown":"# Hello\n\nThis is from HTTP."}' \
   --output output/http.pdf
+```
+
+HTML 示例：
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  -d '{"html":"<h1>Hello</h1><p>This is from HTTP HTML.</p>"}' \
+  --output output/http_html.pdf
 ```
 
 水印示例：

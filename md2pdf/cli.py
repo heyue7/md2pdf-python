@@ -10,6 +10,7 @@ from pathlib import Path
 from md2pdf.converter import (
     ConvertOptions,
     convert_markdown_to_pdf,
+    render_html_to_pdf_bytes,
     render_markdown_to_pdf_bytes,
 )
 
@@ -17,9 +18,9 @@ from md2pdf.converter import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="md2pdf",
-        description="将 Markdown 文件转换为 PDF，或启动 HTTP 转换服务",
+        description="将 Markdown/HTML 文件转换为 PDF，或启动 HTTP 转换服务",
     )
-    parser.add_argument("input", nargs="?", help="输入 Markdown 文件路径")
+    parser.add_argument("input", nargs="?", help="输入 Markdown 或 HTML 文件路径")
     parser.add_argument(
         "-o", "--output", help="输出 PDF 文件路径（默认与输入同名 .pdf）"
     )
@@ -111,11 +112,11 @@ def _handler_factory(default_css_path: Path | None) -> type[BaseHTTPRequestHandl
             payload: dict[str, object],
             watermark_text: str | None,
         ) -> None:
-            markdown_text = payload.get("markdown")
-            if not isinstance(markdown_text, str):
+            source_kind, source_text = _resolve_request_source(payload)
+            if source_text is None:
                 self._send_json(
                     HTTPStatus.BAD_REQUEST,
-                    {"error": "field 'markdown' must be a string"},
+                    {"error": "exactly one of 'markdown' or 'html' must be a string"},
                 )
                 return
 
@@ -125,12 +126,20 @@ def _handler_factory(default_css_path: Path | None) -> type[BaseHTTPRequestHandl
             safe_filename = filename.replace('"', "").replace("\n", "")
 
             try:
-                pdf_bytes = render_markdown_to_pdf_bytes(
-                    markdown_text=markdown_text,
-                    title="http-request.md",
-                    css_path=css_path,
-                    watermark_text=watermark_text,
-                )
+                if source_kind == "html":
+                    pdf_bytes = render_html_to_pdf_bytes(
+                        html_text=source_text,
+                        title="http-request.html",
+                        css_path=css_path,
+                        watermark_text=watermark_text,
+                    )
+                else:
+                    pdf_bytes = render_markdown_to_pdf_bytes(
+                        markdown_text=source_text,
+                        title="http-request.md",
+                        css_path=css_path,
+                        watermark_text=watermark_text,
+                    )
             except Exception as exc:
                 self._send_json(
                     HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -166,12 +175,25 @@ def _resolve_filename(filename_value: object) -> str:
     return "output.pdf"
 
 
+def _resolve_request_source(payload: dict[str, object]) -> tuple[str | None, str | None]:
+    markdown_text = payload.get("markdown")
+    html_text = payload.get("html")
+
+    has_markdown = isinstance(markdown_text, str)
+    has_html = isinstance(html_text, str)
+    if has_markdown == has_html:
+        return None, None
+    if has_html:
+        return "html", html_text
+    return "markdown", markdown_text
+
+
 def run_server(host: str, port: int, css_path: Path | None) -> int:
     server = ThreadingHTTPServer((host, port), _handler_factory(css_path))
     print(f"HTTP server started: http://{host}:{port}")
-    print("POST /convert with JSON: {'markdown': '...'}")
+    print("POST /convert with JSON: {'markdown': '...'} or {'html': '...'}")
     print(
-        "POST /convert-watermark with JSON: {'markdown': '...', 'watermark_text': 'CONFIDENTIAL'}"
+        "POST /convert-watermark with JSON: {'markdown': '...', 'watermark_text': 'CONFIDENTIAL'} or {'html': '...', 'watermark_text': 'CONFIDENTIAL'}"
     )
     print("GET /health for health check")
     try:

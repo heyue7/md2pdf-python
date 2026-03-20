@@ -28,14 +28,23 @@ def convert_markdown_to_pdf(options: ConvertOptions) -> Path:
         else input_path.with_suffix(".pdf")
     )
 
-    markdown_text = input_path.read_text(encoding="utf-8")
-    pdf_bytes = render_markdown_to_pdf_bytes(
-        markdown_text=markdown_text,
-        title=input_path.name,
-        css_path=options.css_path,
-        base_path=input_path.parent,
-        watermark_text=options.watermark_text,
-    )
+    source_text = input_path.read_text(encoding="utf-8")
+    if input_path.suffix.lower() in {".html", ".htm"}:
+        pdf_bytes = render_html_to_pdf_bytes(
+            html_text=source_text,
+            title=input_path.name,
+            css_path=options.css_path,
+            base_path=input_path.parent,
+            watermark_text=options.watermark_text,
+        )
+    else:
+        pdf_bytes = render_markdown_to_pdf_bytes(
+            markdown_text=source_text,
+            title=input_path.name,
+            css_path=options.css_path,
+            base_path=input_path.parent,
+            watermark_text=options.watermark_text,
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pdf_bytes)
@@ -56,13 +65,42 @@ def render_markdown_to_pdf_bytes(
         output_format="html",
     )
 
-    css_text = _read_css(css_path)
-    html_document = _wrap_html_document(
+    return render_html_to_pdf_bytes(
+        html_text=html_body,
         title=title,
-        html_body=html_body,
-        css_text=css_text,
+        css_path=css_path,
+        base_path=base_path,
         watermark_text=watermark_text,
+        body_only=True,
     )
+
+
+def render_html_to_pdf_bytes(
+    html_text: str,
+    *,
+    title: str,
+    css_path: Path | None = None,
+    base_path: Path | None = None,
+    watermark_text: str | None = None,
+    body_only: bool = False,
+) -> bytes:
+    css_text = _read_css(css_path)
+    html_document = (
+        _wrap_html_document(
+            title=title,
+            html_body=html_text,
+            css_text=css_text,
+            watermark_text=watermark_text,
+        )
+        if body_only
+        else _compose_html_document(
+            title=title,
+            html_text=html_text,
+            css_text=css_text,
+            watermark_text=watermark_text,
+        )
+    )
+
     resolved_base = base_path.expanduser().resolve() if base_path else Path.cwd()
     pdf_bytes = HTML(string=html_document, base_url=str(resolved_base)).write_pdf()
     if pdf_bytes is None:
@@ -109,6 +147,77 @@ def _wrap_html_document(
   </body>
 </html>
 """
+
+
+def _compose_html_document(
+    title: str,
+    html_text: str,
+    css_text: str,
+    watermark_text: str | None = None,
+) -> str:
+    if _looks_like_full_html_document(html_text):
+        return _augment_existing_html_document(
+            html_text=html_text,
+            css_text=css_text,
+            watermark_text=watermark_text,
+        )
+
+    safe_title = escape(title)
+    watermark_overlay, watermark_style = _build_watermark_assets(watermark_text)
+    overlay_markup = f"{watermark_overlay}\n" if watermark_overlay else ""
+
+    return f"""<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{safe_title}</title>
+    <style>
+{css_text}
+{watermark_style}
+    </style>
+  </head>
+  <body>
+{overlay_markup}{html_text}
+  </body>
+</html>
+"""
+
+
+def _looks_like_full_html_document(html_text: str) -> bool:
+    lowered_html = html_text.lower()
+    return "<html" in lowered_html or "<body" in lowered_html or "<head" in lowered_html
+
+
+def _augment_existing_html_document(
+    html_text: str,
+    css_text: str,
+    watermark_text: str | None = None,
+) -> str:
+    watermark_overlay, watermark_style = _build_watermark_assets(watermark_text)
+    style_block = f"<style>\n{css_text}\n{watermark_style}\n</style>"
+
+    if "</head>" in html_text:
+        html_text = html_text.replace("</head>", f"{style_block}\n</head>", 1)
+    else:
+        html_text = f"{style_block}\n{html_text}"
+
+    if watermark_overlay:
+        lowered_html = html_text.lower()
+        body_open_index = lowered_html.find("<body")
+        if body_open_index != -1:
+            body_open_end = html_text.find(">", body_open_index)
+            if body_open_end != -1:
+                html_text = (
+                    f"{html_text[: body_open_end + 1]}\n{watermark_overlay}"
+                    f"{html_text[body_open_end + 1 :]}"
+                )
+            else:
+                html_text = f"{watermark_overlay}\n{html_text}"
+        else:
+            html_text = f"{watermark_overlay}\n{html_text}"
+
+    return html_text
 
 
 def _build_watermark_assets(watermark_text: str | None) -> tuple[str, str]:

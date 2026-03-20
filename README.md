@@ -1,6 +1,6 @@
 # Markdown to PDF (Python)
 
-A production-oriented Markdown-to-PDF tool powered by `markdown + weasyprint`.
+A production-oriented Markdown/HTML-to-PDF tool powered by `markdown + weasyprint`.
 
 - File-based CLI conversion
 - HTTP conversion service (default `20706`)
@@ -36,6 +36,12 @@ Single-file CLI conversion:
 
 ```bash
 md2pdf samples/basic.md -o output/basic.pdf
+```
+
+HTML file conversion:
+
+```bash
+md2pdf samples/basic.html -o output/basic_html.pdf
 ```
 
 Quick watermark conversion (script):
@@ -81,6 +87,15 @@ curl -X POST "http://127.0.0.1:20706/convert" \
   -H "Content-Type: application/json" \
   -d '{"markdown":"# Hello\n\nThis is from HTTP."}' \
   --output output/http.pdf
+```
+
+HTTP HTML conversion call:
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  -d '{"html":"<h1>Hello</h1><p>This is from HTTP HTML.</p>"}' \
+  --output output/http_html.pdf
 ```
 
 HTTP conversion call from a local `.md` file:
@@ -184,14 +199,14 @@ sudo bash scripts/deploy_ubuntu.sh
 ### CLI
 
 ```bash
-md2pdf <input.md> [-o output.pdf] [--css custom.css]
-md2pdf <input.md> [-o output.pdf] [--css custom.css] [--watermark] [--watermark-text TEXT]
+md2pdf <input.md|input.html> [-o output.pdf] [--css custom.css]
+md2pdf <input.md|input.html> [-o output.pdf] [--css custom.css] [--watermark] [--watermark-text TEXT]
 md2pdf --serve [--host 127.0.0.1] [--port 20706] [--css custom.css]
 ```
 
 Arguments:
 
-- `input`: Markdown input file (required when not using `--serve`)
+- `input`: Markdown or HTML input file (required when not using `--serve`)
 - `-o, --output`: output PDF path (defaults to input filename with `.pdf`)
 - `--css`: custom CSS file path
 - `--watermark`: enable watermark with default text `CONFIDENTIAL`
@@ -220,7 +235,7 @@ Watermark convert endpoint: `POST /convert-watermark`
 
 Request JSON fields:
 
-- `markdown` (required, string)
+- `markdown` or `html` (exactly one is required, string)
 - `filename` (optional, default `output.pdf`)
 - `css_path` (optional, server-side CSS path)
 
@@ -235,6 +250,15 @@ curl -X POST "http://127.0.0.1:20706/convert" \
   -H "Content-Type: application/json" \
   -d '{"markdown":"# Hello\n\nThis is from HTTP."}' \
   --output output/http.pdf
+```
+
+HTML example:
+
+```bash
+curl -X POST "http://127.0.0.1:20706/convert" \
+  -H "Content-Type: application/json" \
+  -d '{"html":"<h1>Hello</h1><p>This is from HTTP HTML.</p>"}' \
+  --output output/http_html.pdf
 ```
 
 Watermark example:
