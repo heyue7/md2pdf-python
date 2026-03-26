@@ -40,7 +40,14 @@ python3 -m venv "$INSTALL_DIR/.venv"
 
 "$INSTALL_DIR/.venv/bin/md2pdf" --help >/dev/null
 
+SCRIPT_DIR="$INSTALL_DIR/scripts"
+if [[ -x "$SCRIPT_DIR/stop_http_background.sh" || -f "$SCRIPT_DIR/stop_http_background.sh" ]]; then
+  echo "Stopping old service..."
+  bash "$SCRIPT_DIR/stop_http_background.sh" "$INSTALL_DIR" || true
+fi
+
+echo "Starting new service..."
+bash "$SCRIPT_DIR/start_http_background.sh"
+
 echo "Deploy success"
 echo "Install dir: $INSTALL_DIR"
-echo "Run HTTP server: $INSTALL_DIR/.venv/bin/md2pdf --serve --host 0.0.0.0 --port 20706"
-echo "Or run in background: bash $INSTALL_DIR/scripts/start_http_background.sh"

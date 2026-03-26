@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
 def _handler_factory(default_css_path: Path | None) -> type[BaseHTTPRequestHandler]:
     class ConvertHandler(BaseHTTPRequestHandler):
         server_version = "md2pdf-http/0.1"
+
+        def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+            if self.path == "/health":
+                return
+            super().log_request(code, size)
 
         def _send_json(self, status: HTTPStatus, payload: dict[str, str]) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -188,7 +194,16 @@ def _resolve_request_source(payload: dict[str, object]) -> tuple[str | None, str
     return "markdown", markdown_text
 
 
+def _setup_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        stream=sys.stderr,
+    )
+
+
 def run_server(host: str, port: int, css_path: Path | None) -> int:
+    _setup_logging()
     server = ThreadingHTTPServer((host, port), _handler_factory(css_path))
     print(f"HTTP server started: http://{host}:{port}")
     print("POST /convert with JSON: {'markdown': '...'} or {'html': '...'}")

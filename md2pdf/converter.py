@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+import re
+import ssl
+import urllib.request
 from dataclasses import dataclass
 from html import escape
 from importlib import resources
@@ -7,6 +11,9 @@ from pathlib import Path
 
 import markdown
 from weasyprint import HTML
+from weasyprint import default_url_fetcher
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -101,11 +108,78 @@ def render_html_to_pdf_bytes(
         )
     )
 
+    html_document = _fix_inline_flex_for_weasyprint(html_document)
+
     resolved_base = base_path.expanduser().resolve() if base_path else Path.cwd()
-    pdf_bytes = HTML(string=html_document, base_url=str(resolved_base)).write_pdf()
+    pdf_bytes = HTML(
+        string=html_document,
+        base_url=str(resolved_base),
+        url_fetcher=_url_fetcher,
+    ).write_pdf()
     if pdf_bytes is None:
         raise RuntimeError("PDF 生成失败")
     return pdf_bytes
+
+
+_INLINE_FLEX_RE = re.compile(
+    r'(?P<pre>style="[^"]*?)display\s*:\s*flex\b',
+    re.IGNORECASE,
+)
+
+
+def _fix_inline_flex_for_weasyprint(html_text: str) -> str:
+    """WeasyPrint cannot render images inside nested flex containers.
+
+    CSS-class-based ``display: flex`` (in <style> blocks) works fine, but
+    inline-style ``display: flex`` nested inside another flex container causes
+    images to vanish.  Convert inline ``display: flex`` to ``display: block``
+    so that outer class-based flex layouts are preserved while the problematic
+    nesting is eliminated.
+    """
+    return _INLINE_FLEX_RE.sub(r'\g<pre>display:block', html_text)
+
+
+_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def _make_permissive_ssl_context() -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _url_fetcher(url: str, timeout: int = 10, ssl_context: ssl.SSLContext | None = None) -> dict:
+    """Fetch remote http(s) resources with browser-like headers so that
+    CDN / object-storage servers (e.g. Aliyun OSS) don't reject the request."""
+    if url.startswith(("http://", "https://")):
+        logger.info("获取远程资源: %s", url)
+        request = urllib.request.Request(url, headers={"User-Agent": _BROWSER_USER_AGENT})
+        contexts = [ssl_context or ssl.create_default_context(), _make_permissive_ssl_context()]
+        last_error: Exception | None = None
+        for ctx in contexts:
+            try:
+                response = urllib.request.urlopen(request, timeout=timeout, context=ctx)
+                data = response.read()
+                content_type = response.headers.get("Content-Type", "")
+                mime = content_type.split(";")[0].strip()
+                logger.info("远程资源获取成功: %s (%d bytes, %s)", url, len(data), mime)
+                return {"string": data, "mime_type": mime}
+            except ssl.SSLError as exc:
+                last_error = exc
+                logger.warning("SSL 校验失败，尝试跳过校验: %s - %s", url, exc)
+                continue
+            except Exception as exc:
+                last_error = exc
+                break
+        logger.error("远程资源获取失败: %s - %s", url, last_error, exc_info=True)
+        return {"string": b"", "mime_type": "application/octet-stream"}
+
+    return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
 
 
 def _read_css(css_path: Path | None) -> str:

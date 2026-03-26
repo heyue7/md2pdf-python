@@ -121,9 +121,15 @@ else
   fi
 fi
 
-echo "Upload success"
-echo "Remote: $REMOTE:$REMOTE_DIR/$BUNDLE_NAME"
-echo "Then run on server:"
-echo "  cd $REMOTE_DIR"
-echo "  tar -xzf $BUNDLE_NAME"
-echo "  sudo bash scripts/deploy_ubuntu.sh"
+echo "Upload success: $REMOTE:$REMOTE_DIR/$BUNDLE_NAME"
+
+DEPLOY_CMD="cd \"$REMOTE_DIR\" && tar -xzf \"$BUNDLE_NAME\" && bash scripts/deploy_ubuntu.sh \"$REMOTE_DIR\""
+
+echo "Running remote deploy..."
+if [[ -n "$PASSWORD" ]]; then
+  SSHPASS="$PASSWORD" sshpass -e ssh "${SSH_OPTS[@]}" "$REMOTE" "$DEPLOY_CMD"
+else
+  ssh "${SSH_OPTS[@]}" "$REMOTE" "$DEPLOY_CMD"
+fi
+
+echo "Deploy complete"
