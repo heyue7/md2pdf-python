@@ -66,6 +66,15 @@ def render_markdown_to_pdf_bytes(
     base_path: Path | None = None,
     watermark_text: str | None = None,
 ) -> bytes:
+    if _should_render_markdown_as_html(markdown_text):
+        return render_html_to_pdf_bytes(
+            html_text=markdown_text,
+            title=title,
+            css_path=css_path,
+            base_path=base_path,
+            watermark_text=watermark_text,
+        )
+
     html_body = markdown.markdown(
         markdown_text,
         extensions=["fenced_code", "tables", "sane_lists", "toc"],
@@ -121,19 +130,34 @@ def render_html_to_pdf_bytes(
     return pdf_bytes
 
 
+_HTML_BLOCK_TAG_RE = re.compile(
+    r"<\s*(style|div|section|article|main|header|footer|aside|table|figure|figcaption|img|p|h1|h2|h3|h4|h5|h6|ul|ol|li|blockquote|pre|svg)\b",
+    re.IGNORECASE,
+)
 _INLINE_FLEX_RE = re.compile(
-    r'(?P<pre>style="[^"]*?)display\s*:\s*flex\b',
+    r'(?P<prefix>style="[^"]*?)display\s*:\s*flex\b',
+    re.IGNORECASE,
+)
+_IMG_HEIGHT_FULL_RE = re.compile(
+    r'(?P<prefix><img\b[^>]*?style="[^"]*?)height\s*:\s*100%\b',
     re.IGNORECASE,
 )
 
 
-def _fix_inline_flex_for_weasyprint(html_text: str) -> str:
-    """WeasyPrint cannot render images inside nested flex containers.
+def _should_render_markdown_as_html(markdown_text: str) -> bool:
+    stripped_text = markdown_text.lstrip()
+    if not stripped_text.startswith("<"):
+        return False
 
-    Only affects inline style attributes (style="display: flex").
-    CSS class definitions in <style> blocks are NOT touched.
-    """
-    return _INLINE_FLEX_RE.sub(r'\g<pre>display:block', html_text)
+    if _looks_like_full_html_document(stripped_text):
+        return True
+
+    return len(_HTML_BLOCK_TAG_RE.findall(stripped_text)) >= 2
+
+
+def _fix_inline_flex_for_weasyprint(html_text: str) -> str:
+    html_text = _INLINE_FLEX_RE.sub(r"\g<prefix>display:block", html_text)
+    return _IMG_HEIGHT_FULL_RE.sub(r"\g<prefix>height:auto", html_text)
 
 
 _BROWSER_USER_AGENT = (
@@ -150,13 +174,20 @@ def _make_permissive_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def _url_fetcher(url: str, timeout: int = 10, ssl_context: ssl.SSLContext | None = None) -> dict:
+def _url_fetcher(
+    url: str, timeout: int = 10, ssl_context: ssl.SSLContext | None = None
+) -> dict:
     """Fetch remote http(s) resources with browser-like headers so that
     CDN / object-storage servers (e.g. Aliyun OSS) don't reject the request."""
     if url.startswith(("http://", "https://")):
         logger.info("获取远程资源: %s", url)
-        request = urllib.request.Request(url, headers={"User-Agent": _BROWSER_USER_AGENT})
-        contexts = [ssl_context or ssl.create_default_context(), _make_permissive_ssl_context()]
+        request = urllib.request.Request(
+            url, headers={"User-Agent": _BROWSER_USER_AGENT}
+        )
+        contexts = [
+            ssl_context or ssl.create_default_context(),
+            _make_permissive_ssl_context(),
+        ]
         last_error: Exception | None = None
         for ctx in contexts:
             try:

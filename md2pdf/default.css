@@ -25,6 +25,8 @@ h6 {
   line-height: 1.3;
   margin: 1.2em 0 0.6em;
   color: #111827;
+  break-after: auto !important;
+  page-break-after: auto !important;
 }
 
 h1 {
@@ -100,4 +102,6 @@ blockquote {
 img {
   max-width: 100%;
   height: auto;
+  max-height: 550px;
+  object-fit: contain;
 }
