@@ -123,7 +123,7 @@ fi
 
 echo "Upload success: $REMOTE:$REMOTE_DIR/$BUNDLE_NAME"
 
-DEPLOY_CMD="cd \"$REMOTE_DIR\" && tar -xzf \"$BUNDLE_NAME\" && bash scripts/deploy_ubuntu.sh \"$REMOTE_DIR\""
+DEPLOY_CMD="cd \"$REMOTE_DIR\" && tar -xzf \"$BUNDLE_NAME\" && sudo bash scripts/deploy_ubuntu.sh \"$REMOTE_DIR\""
 
 echo "Running remote deploy..."
 if [[ -n "$PASSWORD" ]]; then

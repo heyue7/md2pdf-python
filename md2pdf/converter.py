@@ -130,11 +130,8 @@ _INLINE_FLEX_RE = re.compile(
 def _fix_inline_flex_for_weasyprint(html_text: str) -> str:
     """WeasyPrint cannot render images inside nested flex containers.
 
-    CSS-class-based ``display: flex`` (in <style> blocks) works fine, but
-    inline-style ``display: flex`` nested inside another flex container causes
-    images to vanish.  Convert inline ``display: flex`` to ``display: block``
-    so that outer class-based flex layouts are preserved while the problematic
-    nesting is eliminated.
+    Only affects inline style attributes (style="display: flex").
+    CSS class definitions in <style> blocks are NOT touched.
     """
     return _INLINE_FLEX_RE.sub(r'\g<pre>display:block', html_text)
 
